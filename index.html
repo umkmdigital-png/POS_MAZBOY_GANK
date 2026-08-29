@@ -959,7 +959,7 @@ function getToppingForStore(topping,storeId=currentStoreId){normalizeToppingStor
 function getToppingConfig(topping,storeId){normalizeToppingStoreSettings(topping);const key=String(storeId);return topping.storeSettings[key]||{nama:topping.nama,harga:topping.harga,avail:topping.avail!==false}}
 
 // ============ FIREBASE / PERSISTENCE ============
-const firebaseConfig={apiKey:"AIzaSyBExVWUHOVFLNAGDfKvrFtfGbE3PJGYLaY",authDomain:"kasir-mazboy-gank.firebaseapp.com",databaseURL:"https://kasir-mazboy-gank-default-rtdb.asia-southeast1.firebasedatabase.app",projectId:"kasir-mazboy-gank",storageBucket:"kasir-mazboy-gank.firebasestorage.app",messagingSenderId:"1099359750247",appId:"1:1099359750247:web:b780edf327b316e8b6ecc2"};
+const firebaseConfig={apiKey:"AIzaSyCbkXjbga5vQxenJ6J7FjVz-jrbWPtCvls",authDomain:"mazboy-firebase.firebaseapp.com",databaseURL:"https://mazboy-firebase-default-rtdb.asia-southeast1.firebasedatabase.app",projectId:"mazboy-firebase",storageBucket:"mazboy-firebase.firebasestorage.app",messagingSenderId:"1069174244329",appId:"1:1069174244329:web:a9b6f5a4b98e8b05738178"};
 let database=null,firebaseReady=false;
 function safeLog(level,...args){try{if(typeof console!=='undefined'&&typeof console[level]==='function'){console[level](...args)}else if(typeof console!=='undefined'&&typeof console.log==='function'){console.log(...args)}}catch(e){}}
 function isFirebaseConfigured(){return!!window.firebase&&firebaseConfig.apiKey&&!firebaseConfig.apiKey.includes('API_KEY_ANDA')&&firebaseConfig.projectId&&!firebaseConfig.projectId.includes('PROYEK_ANDA')&&firebaseConfig.databaseURL&&!firebaseConfig.databaseURL.includes('PROYEK_ANDA')}
