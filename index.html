@@ -522,7 +522,7 @@ select option{background:var(--bg3)}
           </div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Tanggal</th><th>Toko</th><th>Staff</th><th>Barang</th><th>Qty</th><th>Harga Satuan</th><th>Total</th><th>Catatan</th></tr></thead>
+              <thead><tr><th>Tanggal</th><th>Toko</th><th>Staff</th><th>Barang</th><th>Qty</th><th>Harga Satuan</th><th>Total</th><th>Catatan</th><th>Aksi</th></tr></thead>
               <tbody id="belanja-tbody"></tbody>
             </table>
           </div>
@@ -790,7 +790,7 @@ select option{background:var(--bg3)}
 <!-- BELANJA FORM MODAL -->
 <div class="modal-overlay" id="belanja-modal" style="display:none" onclick="if(event.target===this)document.getElementById('belanja-modal').style.display='none'">
   <div class="modal">
-    <div class="modal-header"><h3>📥 Catat Belanja Barang <span id="belanja-modal-store" style="font-size:.75rem;color:var(--text2);font-weight:400"></span></h3><button class="close-btn" onclick="document.getElementById('belanja-modal').style.display='none'">✕</button></div>
+    <div class="modal-header"><h3 id="belanja-modal-title">📥 Catat Belanja Barang <span id="belanja-modal-store" style="font-size:.75rem;color:var(--text2);font-weight:400"></span></h3><button class="close-btn" onclick="document.getElementById('belanja-modal').style.display='none'">✕</button></div>
     <div class="modal-body">
       <div class="form-group"><label>Pilih dari Menu (opsional)</label><select id="belanja-menu-select" onchange="onBelanjaMenuSelect()"><option value="">-- Barang lain / isi manual --</option></select></div>
       <div class="form-group"><label>Nama Barang</label><input type="text" id="belanja-nama-input" placeholder="Nama barang yang dibelanjakan..."></div>
@@ -1311,15 +1311,45 @@ function sendWA(){
   const num=document.getElementById('wa-number').value.trim();
   if(!num){toast('Masukkan nomor WhatsApp','error');return}
   db.settings.waNumber=num;saveDB();
-  const today=new Date().toLocaleDateString('id-ID');
-  const todayTxs=db.transactions.filter(t=>new Date(t.waktu).toLocaleDateString('id-ID')===today);
-  if(!todayTxs.length){toast('Belum ada transaksi hari ini','info');return}
-  const total=todayTxs.reduce((s,t)=>s+t.total,0);
-  const totalTunai=todayTxs.filter(t=>t.metode==='tunai').reduce((s,t)=>s+t.total,0);
-  const totalQris=todayTxs.filter(t=>t.metode==='qris').reduce((s,t)=>s+t.total,0);
-  const totalTransfer=todayTxs.filter(t=>t.metode==='transfer').reduce((s,t)=>s+t.total,0);
-  let msg=`*📊 LAPORAN PENJUALAN*\n🏢 *${db.settings.nama}*\n📅 ${today}\n---\n*📈 RINGKASAN*\n💰 Total: *${fmtRp(total)}*\n🧾 Transaksi: ${todayTxs.length}\n\n*💳 METODE*\n💵 Tunai: ${fmtRp(totalTunai)}\n📱 QRIS: ${fmtRp(totalQris)}\n🏦 Transfer: ${fmtRp(totalTransfer)}\n\n*📝 DETAIL*\n`;
-  todayTxs.forEach((t,i)=>{const jam=new Date(t.waktu).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'});msg+=`${i+1}. *${t.no}* (${jam}) — ${t.customer} — *${fmtRp(t.total)}*\n`});
+
+  // Gunakan filter tanggal yang sedang dipilih staff di halaman Laporan (from-date/to-date),
+  // BUKAN selalu "hari ini". Dengan begitu staff tetap bisa kirim laporan omzet untuk
+  // tanggal yang mereka pilih meskipun sekarang sudah ganti hari/tanggal.
+  const from=document.getElementById('from-date')?.value;
+  const to=document.getElementById('to-date')?.value;
+  let txs=db.transactions;
+  if(currentUser&&currentUser.storeId!==null)txs=txs.filter(t=>t.storeId===currentUser.storeId);
+  else if(dashboardStoreFilter)txs=txs.filter(t=>t.storeId===dashboardStoreFilter);
+  if(from){const fd=new Date(from);txs=txs.filter(t=>new Date(t.waktu)>=fd)}
+  if(to){const td=new Date(to);td.setHours(23,59,59);txs=txs.filter(t=>new Date(t.waktu)<=td)}
+
+  if(!txs.length){toast('Tidak ada transaksi pada tanggal yang dipilih','info');return}
+
+  const total=txs.reduce((s,t)=>s+t.total,0);
+  const totalTunai=txs.filter(t=>t.metode==='tunai').reduce((s,t)=>s+t.total,0);
+  const totalQris=txs.filter(t=>t.metode==='qris').reduce((s,t)=>s+t.total,0);
+  const totalTransfer=txs.filter(t=>t.metode==='transfer').reduce((s,t)=>s+t.total,0);
+
+  // Label rentang tanggal yang ditampilkan di pesan, sesuai pilihan staff
+  let rangeLabel='Semua Tanggal';
+  if(from&&to){
+    rangeLabel = from===to
+      ? new Date(from).toLocaleDateString('id-ID',{weekday:'long',year:'numeric',month:'long',day:'numeric'})
+      : `${new Date(from).toLocaleDateString('id-ID')} s/d ${new Date(to).toLocaleDateString('id-ID')}`;
+  }else if(from){
+    rangeLabel = `Mulai ${new Date(from).toLocaleDateString('id-ID')}`;
+  }else if(to){
+    rangeLabel = `Sampai ${new Date(to).toLocaleDateString('id-ID')}`;
+  }
+
+  const storeLabel = currentUser&&currentUser.storeId!==null ? storeName(currentUser.storeId) : (dashboardStoreFilter?storeName(dashboardStoreFilter):'Semua Toko');
+
+  let msg=`*📊 LAPORAN PENJUALAN*\n🏢 *${db.settings.nama}*\n🏪 ${storeLabel}\n📅 ${rangeLabel}\n---\n*📈 RINGKASAN*\n💰 Total: *${fmtRp(total)}*\n🧾 Transaksi: ${txs.length}\n\n*💳 METODE*\n💵 Tunai: ${fmtRp(totalTunai)}\n📱 QRIS: ${fmtRp(totalQris)}\n🏦 Transfer: ${fmtRp(totalTransfer)}\n\n*📝 DETAIL*\n`;
+  txs.forEach((t,i)=>{
+    const tgl=new Date(t.waktu).toLocaleDateString('id-ID');
+    const jam=new Date(t.waktu).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'});
+    msg+=`${i+1}. *${t.no}* (${tgl} ${jam}) — ${t.customer} — *${fmtRp(t.total)}*\n`;
+  });
   msg+=`\n_Dikirim dari Kasir Pro 🧾_`;
   window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,'_blank');
 }
@@ -1420,7 +1450,9 @@ function calcDiff(id,sistem){const fisik=parseInt(document.getElementById('stok-
 function saveStok(){normalizeAllMenuStores();db.menus.forEach(base=>{const el=document.getElementById('stok-'+base.id);if(el){const cfg=getMenuConfig(base,currentStoreId);base.storeSettings[String(currentStoreId)]={...cfg,stok:Math.max(0,parseInt(el.value)||0)}}});saveDB();renderMenuGrid();renderStokTable();renderMenuMgmt();toast(`✅ Stok ${storeName(currentStoreId)} berhasil disimpan!`,'success')}
 
 // ============ DATA BELANJA (PEMBELIAN BARANG) ============
+let editBelanjaId=null;
 function openAddBelanja(){
+  editBelanjaId=null;
   normalizeAllMenuStores();
   const sel=document.getElementById('belanja-menu-select');
   sel.innerHTML='<option value="">-- Barang lain / isi manual --</option>'+db.menus.map(base=>{const cfg=getMenuConfig(base,currentStoreId);return`<option value="${base.id}">${cfg.emoji} ${cfg.nama}</option>`}).join('');
@@ -1431,7 +1463,33 @@ function openAddBelanja(){
   document.getElementById('belanja-catatan-input').value='';
   document.getElementById('belanja-addstock-group').style.display='none';
   document.getElementById('belanja-addstock-input').checked=true;
+  document.getElementById('belanja-modal-title').firstChild.textContent='📥 Catat Belanja Barang ';
   document.getElementById('belanja-modal-store').textContent=storeName(currentStoreId);
+  const saveBtn=document.querySelector('#belanja-modal .modal-footer .btn-primary');
+  if(saveBtn)saveBtn.textContent='Simpan';
+  document.getElementById('belanja-modal').style.display='flex';
+}
+function openEditBelanja(id){
+  const rec=db.belanja.find(b=>b.id===id);
+  if(!rec)return;
+  // Staff hanya boleh edit data belanja toko mereka sendiri; owner/admin bebas
+  if(currentUser&&currentUser.storeId!==null&&rec.storeId!==currentUser.storeId){toast('Hanya bisa mengedit data belanja toko sendiri','error');return}
+  editBelanjaId=id;
+  normalizeAllMenuStores();
+  const sel=document.getElementById('belanja-menu-select');
+  sel.innerHTML='<option value="">-- Barang lain / isi manual --</option>'+db.menus.map(base=>{const cfg=getMenuConfig(base,rec.storeId);return`<option value="${base.id}">${cfg.emoji} ${cfg.nama}</option>`}).join('');
+  sel.value=rec.menuId?String(rec.menuId):'';
+  document.getElementById('belanja-nama-input').value=rec.nama;
+  document.getElementById('belanja-qty-input').value=rec.qty;
+  document.getElementById('belanja-harga-input').value=rec.harga;
+  document.getElementById('belanja-catatan-input').value=rec.catatan||'';
+  // Saat edit, jangan otomatis menambah stok lagi (default checkbox dimatikan)
+  document.getElementById('belanja-addstock-group').style.display=rec.menuId?'block':'none';
+  document.getElementById('belanja-addstock-input').checked=false;
+  document.getElementById('belanja-modal-title').firstChild.textContent='✏️ Edit Belanja Barang ';
+  document.getElementById('belanja-modal-store').textContent=storeName(rec.storeId);
+  const saveBtn=document.querySelector('#belanja-modal .modal-footer .btn-primary');
+  if(saveBtn)saveBtn.textContent='Simpan Perubahan';
   document.getElementById('belanja-modal').style.display='flex';
 }
 function onBelanjaMenuSelect(){
@@ -1439,7 +1497,8 @@ function onBelanjaMenuSelect(){
   const group=document.getElementById('belanja-addstock-group');
   if(id){
     const base=db.menus.find(m=>m.id===parseInt(id));
-    const cfg=getMenuConfig(base,currentStoreId);
+    const sid=editBelanjaId?(db.belanja.find(b=>b.id===editBelanjaId)?.storeId??currentStoreId):currentStoreId;
+    const cfg=getMenuConfig(base,sid);
     document.getElementById('belanja-nama-input').value=cfg.nama;
     group.style.display='block';
   }else{
@@ -1447,6 +1506,45 @@ function onBelanjaMenuSelect(){
   }
 }
 function saveBelanja(){
+  if(editBelanjaId){
+    // ============ MODE EDIT ============
+    const rec=db.belanja.find(b=>b.id===editBelanjaId);
+    if(!rec){toast('Data belanja tidak ditemukan','error');return}
+    if(currentUser&&currentUser.storeId!==null&&rec.storeId!==currentUser.storeId){toast('Hanya bisa mengedit data belanja toko sendiri','error');return}
+    const menuId=document.getElementById('belanja-menu-select').value;
+    const nama=document.getElementById('belanja-nama-input').value.trim();
+    const qty=parseInt(document.getElementById('belanja-qty-input').value)||0;
+    const harga=parseInt(document.getElementById('belanja-harga-input').value)||0;
+    const catatan=document.getElementById('belanja-catatan-input').value.trim();
+    if(!nama||qty<=0){toast('Nama barang dan jumlah wajib diisi','error');return}
+
+    // Jika sebelumnya sudah pernah menambah stok otomatis, kembalikan dulu (rollback)
+    // stok lama sebelum menerapkan qty baru, supaya stok tidak dobel/salah saat diedit.
+    const oldMenuId=rec.menuId;
+    const oldQty=rec.qty;
+    const oldAddedStock=!!rec.addedToStock;
+    if(oldAddedStock&&oldMenuId){
+      const oldBase=db.menus.find(m=>m.id===oldMenuId);
+      if(oldBase){normalizeMenuStoreSettings(oldBase);const cfg=getMenuConfig(oldBase,rec.storeId);oldBase.storeSettings[String(rec.storeId)]={...cfg,stok:Math.max(0,cfg.stok-oldQty)}}
+    }
+
+    const newMenuId=menuId?parseInt(menuId):null;
+    const addStockNow=newMenuId&&document.getElementById('belanja-addstock-input').checked;
+    if(addStockNow){
+      const newBase=db.menus.find(m=>m.id===newMenuId);
+      if(newBase){normalizeMenuStoreSettings(newBase);const cfg=getMenuConfig(newBase,rec.storeId);newBase.storeSettings[String(rec.storeId)]={...cfg,stok:cfg.stok+qty}}
+    }
+
+    rec.nama=nama;rec.qty=qty;rec.harga=harga;rec.total=qty*harga;rec.catatan=catatan;rec.menuId=newMenuId;rec.addedToStock=!!addStockNow;rec.editedAt=new Date().toISOString();rec.editedBy=currentUser.nama;
+
+    saveDB();
+    document.getElementById('belanja-modal').style.display='none';
+    editBelanjaId=null;
+    renderBelanjaTable();renderStokTable();renderMenuGrid();renderMenuMgmt();
+    toast('✅ Data belanja berhasil diperbarui!','success');
+    return;
+  }
+  // ============ MODE TAMBAH BARU ============
   if(currentStoreId==null){toast('Pilih toko terlebih dahulu','error');return}
   const menuId=document.getElementById('belanja-menu-select').value;
   const nama=document.getElementById('belanja-nama-input').value.trim();
@@ -1454,9 +1552,10 @@ function saveBelanja(){
   const harga=parseInt(document.getElementById('belanja-harga-input').value)||0;
   const catatan=document.getElementById('belanja-catatan-input').value.trim();
   if(!nama||qty<=0){toast('Nama barang dan jumlah wajib diisi','error');return}
-  const rec={id:Date.now(),storeId:currentStoreId,waktu:new Date().toISOString(),staff:currentUser.nama,nama,qty,harga,total:qty*harga,catatan,menuId:menuId?parseInt(menuId):null};
+  const addStockNow=!!(menuId&&document.getElementById('belanja-addstock-input').checked);
+  const rec={id:Date.now(),storeId:currentStoreId,waktu:new Date().toISOString(),staff:currentUser.nama,nama,qty,harga,total:qty*harga,catatan,menuId:menuId?parseInt(menuId):null,addedToStock:addStockNow};
   db.belanja.push(rec);
-  if(menuId&&document.getElementById('belanja-addstock-input').checked){
+  if(addStockNow){
     const base=db.menus.find(m=>m.id===parseInt(menuId));
     if(base){normalizeMenuStoreSettings(base);const cfg=getMenuConfig(base,currentStoreId);base.storeSettings[String(currentStoreId)]={...cfg,stok:cfg.stok+qty}}
   }
@@ -1474,9 +1573,23 @@ function renderBelanjaTable(){
   const totalBelanja=list.reduce((s,b)=>s+b.total,0);
   const totalEl=document.getElementById('belanja-total-display');
   if(totalEl)totalEl.textContent=fmtRp(totalBelanja);
-  tbody.innerHTML=list.length?[...list].reverse().map(b=>{const d=new Date(b.waktu);return`<tr><td>${d.toLocaleDateString('id-ID')} ${d.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})}</td><td><span class="badge badge-info">${storeName(b.storeId)}</span></td><td>${b.staff}</td><td>${b.nama}</td><td>${b.qty}</td><td>${fmtRp(b.harga)}</td><td style="font-weight:700;color:var(--accent2)">${fmtRp(b.total)}</td><td style="font-size:.8rem;color:var(--text2)">${b.catatan||'—'}</td></tr>`}).join(''):'<tr><td colspan="8" style="text-align:center;color:var(--text2);padding:1.5rem">Belum ada data belanja</td></tr>';
+  tbody.innerHTML=list.length?[...list].reverse().map(b=>{const d=new Date(b.waktu);const editedInfo=b.editedAt?`<br><span style="font-size:.7rem;color:var(--text3)">✏️ diedit ${new Date(b.editedAt).toLocaleString('id-ID')}</span>`:'';return`<tr><td>${d.toLocaleDateString('id-ID')} ${d.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})}${editedInfo}</td><td><span class="badge badge-info">${storeName(b.storeId)}</span></td><td>${b.staff}</td><td>${b.nama}</td><td>${b.qty}</td><td>${fmtRp(b.harga)}</td><td style="font-weight:700;color:var(--accent2)">${fmtRp(b.total)}</td><td style="font-size:.8rem;color:var(--text2)">${b.catatan||'—'}</td><td><div style="display:flex;gap:.3rem"><button class="btn btn-ghost btn-sm" onclick="openEditBelanja(${b.id})" title="Edit">✏️</button><button class="btn btn-danger btn-sm" onclick="deleteBelanja(${b.id})" title="Hapus">🗑️</button></div></td></tr>`}).join(''):'<tr><td colspan="9" style="text-align:center;color:var(--text2);padding:1.5rem">Belum ada data belanja</td></tr>';
 }
-function deleteBelanja(id){if(!confirm('Hapus catatan belanja ini?'))return;db.belanja=db.belanja.filter(b=>b.id!==id);saveDB();renderBelanjaTable()}
+function deleteBelanja(id){
+  const rec=db.belanja.find(b=>b.id===id);
+  if(!rec)return;
+  if(currentUser&&currentUser.storeId!==null&&rec.storeId!==currentUser.storeId){toast('Hanya bisa menghapus data belanja toko sendiri','error');return}
+  if(!confirm(`Hapus catatan belanja "${rec.nama}" (${rec.qty} x ${fmtRp(rec.harga)})?\n\nJika sebelumnya stok sudah ditambahkan otomatis, stok akan dikurangi kembali sejumlah ${rec.qty}.`))return;
+  // Rollback stok jika catatan ini sebelumnya menambah stok otomatis
+  if(rec.addedToStock&&rec.menuId){
+    const base=db.menus.find(m=>m.id===rec.menuId);
+    if(base){normalizeMenuStoreSettings(base);const cfg=getMenuConfig(base,rec.storeId);base.storeSettings[String(rec.storeId)]={...cfg,stok:Math.max(0,cfg.stok-rec.qty)}}
+  }
+  db.belanja=db.belanja.filter(b=>b.id!==id);
+  saveDB();
+  renderBelanjaTable();renderStokTable();renderMenuGrid();renderMenuMgmt();
+  toast('🗑️ Catatan belanja dihapus','success');
+}
 
 // ============ ABSENSI ============
 function renderAbsensi(){
